@@ -1,0 +1,58 @@
+WITH hbo_json_flaten_nonepisode AS (
+	SELECT
+	 	  JSON:Id::STRING AS Platform_Title_Id
+	 	 ,JSON:CleanTitle::STRING AS Content_Title
+		 ,country.value::STRING AS Origin_Country
+		 ,languages.value::STRING AS Contentent_Language
+		 ,JSON:IsOriginal:: STRING AS Original_Classification
+		 ,Region:: STRING AS Region
+		 ,actor.value::STRING AS Actors_Name
+		 ,director.value::STRING AS Director_Name
+		 ,genre.value:: STRING AS Genre_Name
+		 ,image.value::STRING AS Content_Image
+		 ,JSON:Synopsis:: STRING AS Synopsis
+		 ,external_id.value:ID::STRING IMDB_Id
+		 ,external_id.value:Provider::STRING IMDB_Provider
+		
+	FROM "METAHUB_HBO"."BB_SRC_JSON",
+		 LATERAL flatten (INPUT => json:CountriesOfOrigin, OUTER => true) country
+		 ,LATERAL flatten (INPUT => json:LanguageList, OUTER => true) languages
+		 ,LATERAL flatten (INPUT => json:Cast, OUTER => true) actor
+		 ,LATERAL flatten (INPUT => json:Directors, OUTER => true) director
+		 ,LATERAL flatten (INPUT => json:Genres, OUTER => true) genre
+		 ,LATERAL flatten (INPUT => json:Image, OUTER => true) image
+		 ,LATERAL flatten (INPUT => json:ExternalIds, OUTER => true) external_id
+		 
+	WHERE CONTENT_TYPE <> 'Episode' AND IMDB_Provider='imdb' AND CREATED_AT >= '2023-07-01'),
+	
+	
+	hbo_unique_meta_us AS (
+	SELECT 
+		Platform_Title_Id
+		,Content_Title
+		,listagg(DISTINCT Origin_Country, ', ') AS Origin_Country
+		,listagg(DISTINCT Contentent_Language, ', ') AS Languages
+		--,listagg(DISTINCT Region, ', ') AS Region
+		,Original_Classification
+		,listagg(DISTINCT Actors_Name, ', ') AS Actors_Name
+		,listagg(DISTINCT Director_Name, ', ') AS Directors_Name
+		,listagg(DISTINCT Genre_Name, ', ') AS Genre_Name
+		,listagg(DISTINCT Content_Image, ', ') AS Images
+		,Synopsis
+		,IMDB_Id AS IMDB_Id
+	FROM hbo_json_flaten_nonepisode 
+	WHERE region = 'US'
+	GROUP BY 
+		Platform_Title_Id
+		,Content_Title
+		,Original_Classification 
+		,Synopsis
+		,IMDB_Id),
+		
+	hbo_unique_meta_us AS (
+	SELECT * FROM hbo_unique_meta_us
+	WHERE PLATFORM_TITLE_ID 
+	IN (SELECT DISTINCT left(PLATFORM_TITLE_ID, len(PLATFORM_TITLE_ID) - 3) PLATFORM_TITLE_ID 
+	FROM "HBO"."HBO_TIMELINE"))
+	
+	SELECT * FROM hbo_unique_meta_us
